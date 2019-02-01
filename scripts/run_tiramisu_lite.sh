@@ -22,19 +22,17 @@ batch=8
 blocks="3 3 4 4 7 7"
 
 #create run dir
-run_dir=/mnt/runs/tiramisu/run2_ngpus1
+run_dir=/mnt/runs/tiramisu/run_ngpus1
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
 #copy relevant files
-cp stage_in_parallel.sh ${run_dir}/
-cp ../../utils/parallel_stagein.py ${run_dir}/
-cp ../../utils/graph_flops.py ${run_dir}/
-cp ../../utils/common_helpers.py ${run_dir}/
-cp ../../utils/data_helpers.py ${run_dir}/
-cp ../../tiramisu-tf/tiramisu-tf-train.py ${run_dir}/
-cp ../../tiramisu-tf/tiramisu-tf-inference.py ${run_dir}/
-cp ../../tiramisu-tf/tiramisu_model.py ${run_dir}/
+cp ../utils/graph_flops.py ${run_dir}/
+cp ../utils/common_helpers.py ${run_dir}/
+cp ../utils/data_helpers.py ${run_dir}/
+cp ../tiramisu-tf/tiramisu-tf-train.py ${run_dir}/
+cp ../tiramisu-tf/tiramisu-tf-inference.py ${run_dir}/
+cp ../tiramisu-tf/tiramisu_model.py ${run_dir}/
 
 #step in
 cd ${run_dir}
