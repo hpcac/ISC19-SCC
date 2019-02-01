@@ -5,8 +5,8 @@ export OMP_NUM_THREADS=6
 export OMP_PLACES=threads
 export OMP_PROC_BIND=spread
 
-#pick GPU
-export CUDA_VISIBLE_DEVICES=2
+#pick GPU: remove for multi-gpu
+export CUDA_VISIBLE_DEVICES=0
 
 #directories
 datadir=/mnt/data
@@ -23,14 +23,12 @@ run_dir=/mnt/runs/deeplab/run_ngpus1
 mkdir -p ${run_dir}
 
 #copy relevant files
-cp stage_in_parallel.sh ${run_dir}/
-cp ../../utils/parallel_stagein.py ${run_dir}/
-cp ../../utils/graph_flops.py ${run_dir}/
-cp ../../utils/common_helpers.py ${run_dir}/
-cp ../../utils/data_helpers.py ${run_dir}/
-cp ../../deeplab-tf/deeplab-tf-train.py ${run_dir}/
-cp ../../deeplab-tf/deeplab-tf-inference.py ${run_dir}/
-cp ../../deeplab-tf/deeplab_model.py ${run_dir}/
+cp ../utils/graph_flops.py ${run_dir}/
+cp ../utils/common_helpers.py ${run_dir}/
+cp ../utils/data_helpers.py ${run_dir}/
+cp ../deeplab-tf/deeplab-tf-train.py ${run_dir}/
+cp ../deeplab-tf/deeplab-tf-inference.py ${run_dir}/
+cp ../deeplab-tf/deeplab_model.py ${run_dir}/
 
 #step in
 cd ${run_dir}
