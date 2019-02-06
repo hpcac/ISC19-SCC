@@ -1,0 +1,67 @@
+Starting Training
+Using distributed computation with Horovod: 4 total ranks
+Loading data...
+Shape of trn_data is 500
+Shape of val_data is 100
+done.
+Num workers: 4
+Local batch size: 8
+Precision: FP32
+Decoder: bilinear
+Batch normalization: True
+Channels: [0, 1, 2, 10]
+Loss type: weighted_mean
+Loss weights: [0.0217966  0.81204625 0.16615715]
+Loss scale factor: 1.0
+Output sampling target: None
+Solver Parameters: learning_rate: 0.0001
+Solver Parameters: gradient_lag: 0
+Solver Parameters: opt_type: LARC-Adam
+Num training samples: 500
+Num validation samples: 100
+Disable checkpoints: False
+Disable image save: True
+training flops: 25.357 TF/step
+number of trainable parameters: 40352803 (153.933727264 MB)
+Enabling LARC
+Looking for model in checkpoint.fp32.lag0
+Restoring model checkpoint.fp32.lag0/model.ckpt-0
+Model restoration successful.
+REPORT: training loss for step 10 (of 1550) is 0.0163747620769, time 104.396, r_inst 5.148, r_peak 8.138, lr 0.0001
+REPORT: training loss for step 20 (of 1550) is 0.0119475643151, time 166.087, r_inst 4.171, r_peak 8.138, lr 0.0001
+REPORT: training loss for step 30 (of 1550) is 0.00969413816929, time 251.482, r_inst 11.895, r_peak 11.895, lr 0.0001
+COMPLETED: training loss for epoch 1 (of 50) is 0.00956979505718, time 253.608, r_sust 3.100
+COMPLETED: evaluation loss for epoch 1 (of 50) is 0.009410052017
+COMPLETED: evaluation IoU for epoch 1 (of 50) is 0.39403539896
+.
+.
+.
+.
+REPORT: training loss for step 1520 (of 1550) is 0.00236102691852, time 6510.365, r_inst 4.192, r_peak 12.199, lr 0.0001
+REPORT: training loss for step 1530 (of 1550) is 0.0024787860224, time 6544.830, r_inst 7.724, r_peak 12.199, lr 0.0001
+REPORT: training loss for step 1540 (of 1550) is 0.00265977284871, time 6580.869, r_inst 6.346, r_peak 12.199, lr 0.0001
+REPORT: training loss for step 1550 (of 1550) is 0.00264210907044, time 6624.890, r_inst 2.516, r_peak 12.199, lr 0.0001
+COMPLETED: training loss for epoch 50 (of 50) is 0.00264210907044, time 6624.891, r_sust 6.519
+COMPLETED: evaluation loss for epoch 50 (of 50) is 0.00786673362988
+COMPLETED: evaluation IoU for epoch 50 (of 50) is 0.468239784241
+Starting Testing
+Loading data...
+Shape of tst_data is 100
+done.
+Num workers: 1
+Local batch size: 8
+Precision: FP32
+Decoder: bilinear
+Batch normalization: True
+Channels: [0, 1, 2, 10]
+Loss type: weighted_mean
+Loss weights: [0.0217966  0.81204625 0.16615715]
+Loss scale factor: 1.0
+Num test samples: 100
+Looking for model in checkpoint.fp32.lag0
+Restoring model checkpoint.fp32.lag0/model.ckpt-1550
+Model restoration successful.
+Storing inference graph to deepcam_inference.pb.
+Starting evaluation on test set
+COMPLETED: evaluation loss is 0.00578864579438
+COMPLETED: evaluation IoU is 0.446166276932
