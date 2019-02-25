@@ -14,6 +14,9 @@ from joblib import Parallel, delayed
 # shared link provided by HPCAC
 shared_link = "https://mellanox.box.com/s/tpxr8g34ueic90ye1r8rtbqxgaj47rtp"
 
+# folder id from shared_link
+folder_id = "66454095235"
+
 # tmp'ly save json response containing files within targeted folder to text file
 output_file = "file_list.txt"
 
@@ -46,7 +49,7 @@ get_files_by_folder = (
 	'curl --location' 
 	' --header "BoxApi: shared_link=' + shared_link + '"'
 	' --header "Authorization: Bearer "' + developer_token +
-	' https://api.box.com/2.0/folders/66454095235/items'
+	' https://api.box.com/2.0/folders/' + folder_id + '/items'
 	' >> ' + output_file
 )
 
