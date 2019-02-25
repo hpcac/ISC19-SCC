@@ -1,8 +1,9 @@
 # What does the script do?
 
 The script queries the folder in the shared link provided by HPCAC
-and stores a temporal list of files as JSON to a .txt file.
-It downloads the list of files in parallel using joblib.
+using the box.com API and stores a temporal list of files as JSON 
+to a .txt file. It downloads the the files in the list in parallel
+using joblib.
 
 # How to query box.com API to download files provided by HPCAC?
 
