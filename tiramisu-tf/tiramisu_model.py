@@ -171,7 +171,8 @@ def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
 
 
 def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_dense_block=6,
-                    growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, batchnorm=False, dtype=tf.float16, filter_sz=3, median_filter=False, data_format='channels_first'):
+                    growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, batchnorm=False, 
+                    dtype=tf.float16, filter_sz=3, median_filter=False, data_format='channels_first'):
 
     channels_axis = 1 if data_format=='channels_first' else -1
     

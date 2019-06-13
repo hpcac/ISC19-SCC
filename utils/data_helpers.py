@@ -28,13 +28,20 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
         dataset = dataset.shard(comm_size, comm_rank)
     else:
         dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
+        
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
-    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [dtype, tf.int32, dtype, tf.string])),
-                          num_parallel_calls = 4)
+        
+    #if we read labels we return a 4-tuple, otherwise a 3-tuple. h5ir reader class needs to be instantiated appropriately also
+    if h5ir.read_labels:
+        dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [dtype, tf.int32, dtype, tf.string])),
+                              num_parallel_calls = 4)
+    else:
+        dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [dtype, tf.string])),
+                              num_parallel_calls = 4)
     dataset = dataset.prefetch(16)
     # make sure all batches are equal in size
-    dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batchsize))
+    dataset = dataset.batch(batchsize, drop_remainder=True)
     dataset = dataset.repeat(num_epochs)
 
     return dataset
@@ -81,6 +88,10 @@ smem = SharedExchangeBuffer(4, 128 << 20)
 # defined outside of the h5_input_reader class due to weirdness with pickling
 #  class methods
 def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, update_on_read, dtype, data_format, sample_target, label_id, shared_slot):
+
+    #do we need to load labels?
+    label_switch = (label_id==None) or (label_id>=0)
+
     #begin_time = time.time()
     with h5.File(path, "r", driver="core", backing_store=False, libver="latest") as f:
         #get min and max values and update stored values
@@ -98,8 +109,9 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
 
         data = f['climate']['data'][channels,:,:]
 
-        #get label
-        label = f['climate']['labels'][...]
+        #get label only if requested
+        if label_switch:
+            label = f['climate']['labels'][...]
 
     #do min/max normalization
     for c in range(len(channels)):
@@ -111,18 +123,19 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
 
     #if new dataset is used, label has a batch index.
     #just take the first entry for the moment
-    if label.ndim == 3:
+
+    if label_switch and (label.ndim == 3):
         chan = np.random.randint(low=0, high=label.shape[0]) if label_id==None else label_id
         label = label[chan,:,:]
 
     # cast data and labels if needed
     if data.dtype != dtype:
         data = data.astype(dtype)
-
-    if label.dtype != np.int32:
+    
+    if label_switch and (label.dtype != np.int32):
         label = label.astype(np.int32)
 
-    if sample_target is not None:
+    if label_switch and (sample_target is not None):
         # determine the number of pixels in each of the three classes
         counts = np.histogram(label, bins=[0,1,2,3])[0]
         # assign a per-class probability that delivers the target number of
@@ -133,19 +146,25 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
         r = np.random.uniform(size=label.shape)
         weights = (r < prob[label]).astype(dtype)
     else:
-        #get weights - choose per-channel based on the labels
-        weights = weights[label]
+        if label_switch:
+            #get weights - choose per-channel based on the labels
+            weights = weights[label]
 
     #time
     #end_time = time.time()
     #print "%d: Time to read image %.3f s" % (os.getpid(), end_time-begin_time)
-    data, label, weights = smem.pack_arrays(shared_slot, data, label, weights)
-    return data, label, weights, minvals, maxvals
+    if label_switch:
+        data, label, weights = smem.pack_arrays(shared_slot, data, label, weights)
+        return  data, label, weights, minvals, maxvals
+    else:
+        data = smem.pack_arrays(shared_slot, data)
+        return data[0], minvals, maxvals
+
 
 #input reader class
 class h5_input_reader(object):
 
-    def __init__(self, path, channels, weights, dtype, normalization_file=None, update_on_read=False, data_format="channels_first", label_id=None, sample_target=None):
+    def __init__(self, path, channels, weights, dtype, normalization_file=None, update_on_read=False, data_format="channels_first", label_id=None, read_labels=True, sample_target=None):
         self.path = path
         self.channels = channels
         self.update_on_read = update_on_read
@@ -154,6 +173,7 @@ class h5_input_reader(object):
         self.data_format = data_format
         self.sample_target = sample_target
         self.label_id = label_id
+        self.read_labels = read_labels
         if normalization_file:
              with h5.File(self.path+'/'+normalization_file, "r", libver="latest") as f:
                  # stats order is mean, max, min, stddev
@@ -172,19 +192,33 @@ class h5_input_reader(object):
         if isinstance(datafile, bytes):
             datafile = datafile.decode("utf-8")
         path = os.path.join(self.path, datafile)
-        begin_time = time.time()
+        #begin_time = time.time()
         #nvtx.RangePush('h5_input', 8)
         shared_slot = smem.get_free_slot()
-        data, label, weights, new_minvals, new_maxvals = self.pool.apply(_h5_input_subprocess_reader, (path, self.channels, self.weights, self.minvals, self.maxvals, self.update_on_read, self.dtype, self.data_format, self.sample_target, self.label_id, shared_slot))
+        if self.read_labels:
+            data, label, weights, new_minvals, new_maxvals = self.pool.apply(_h5_input_subprocess_reader, (path, self.channels, self.weights, self.minvals, self.maxvals, self.update_on_read, self.dtype, self.data_format, self.sample_target, self.label_id, shared_slot))
+        else:
+            data, new_minvals, new_maxvals = self.pool.apply(_h5_input_subprocess_reader, (path, self.channels, self.weights, self.minvals, self.maxvals, self.update_on_read, self.dtype, self.data_format, self.sample_target, -1, shared_slot))
+            
         if self.update_on_read:
             self.minvals = np.minimum(self.minvals, new_minvals)
             self.maxvals = np.maximum(self.maxvals, new_maxvals)
-        data, label, weights = smem.unpack_arrays(shared_slot, data, label, weights)
+        
+        if self.read_labels:
+            data, label, weights = smem.unpack_arrays(shared_slot, data, label, weights)
+        else:
+            data = smem.unpack_arrays(shared_slot, data)
+            data = data[0]
+        #give back the slot
         smem.return_slot(shared_slot)
         #nvtx.RangePop()
-        end_time = time.time()
-        print("Time to read in parallel %s = %.3f s" % (path, end_time-begin_time))
-        return data, label, weights, path
+        #end_time = time.time()
+        #print("Time to read in parallel %s = %.3f s" % (path, end_time-begin_time))
+        if self.read_labels:
+            return data, label, weights, path
+        else:
+            return data, path
+
 
     def sequential_read(self, datafile):
         if isinstance(datafile, bytes):
@@ -206,12 +240,13 @@ class h5_input_reader(object):
                 data = np.transpose(data, [1,2,0])
 
             #get label
-            label = f['climate']['labels'][...].astype(np.int32)
+            if self.read_labels:
+                label = f['climate']['labels'][...].astype(np.int32)
 
 
         #if new dataset is used, label has a batch index.
         #just take the first entry for the moment
-        if label.ndim == 3:
+        if self.read_labels and (label.ndim == 3):
             chan = np.random.randint(low=0, high=label.shape[0]) if self.label_id==None else self.label_id
             label = label[chan,:,:]
 
@@ -219,10 +254,10 @@ class h5_input_reader(object):
         if data.dtype != self.dtype:
             data = data.astype(self.dtype)
 
-        if label.dtype != np.int32:
+        if self.read_labels and (label.dtype != np.int32):
             label = label.astype(np.int32)
 
-        if self.sample_target is not None:
+        if self.read_labels and self.sample_target is not None:
             # determine the number of pixels in each of the three classes
             counts = np.histogram(label, bins=[0,1,2,3])[0]
             # assign a per-class probability that delivers the target number of
@@ -233,14 +268,15 @@ class h5_input_reader(object):
             r = np.random.uniform(size=label.shape)
             weights = (r < prob[label]).astype(dtype)
         else:
-            #get weights - choose per-channel based on the labels
-            weights = self.weights[label]
+            if self.read_labels:
+                #get weights - choose per-channel based on the labels
+                weights = self.weights[label]
 
         #time
         #end_time = time.time()
         #print("Time to read sequentially %s = %.3f s" % (path, end_time-begin_time))
 
-        return data, label, weights, path
+        return data, path if not self.read_labels else data, label, weights, path
 
 
 #load data routine

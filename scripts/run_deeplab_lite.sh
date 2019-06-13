@@ -1,5 +1,7 @@
 #!/bin/bash
 
+module load tensorflow/gpu-1.13.1-py36
+
 #openmp stuff
 export OMP_NUM_THREADS=6
 export OMP_PLACES=threads
@@ -9,8 +11,8 @@ export OMP_PROC_BIND=spread
 export CUDA_VISIBLE_DEVICES=0
 
 #directories
-datadir=/mnt/data
-scratchdir=/mnt/data
+datadir=/project/projectdirs/mpccc/tkurth/DataScience/gb2018/data/segm_h5_v3_new_split_maeve #/mnt/data
+scratchdir=/project/projectdirs/mpccc/tkurth/DataScience/gb2018/data/segm_h5_v3_new_split_maeve #/mnt/data
 numfiles_train=1500
 numfiles_validation=300
 numfiles_test=500
@@ -18,7 +20,7 @@ downsampling=4
 batch=8
 
 #create run dir
-run_dir=/mnt/runs/deeplab/run_ngpus1
+run_dir=/mnt/runs/deeplab/run_ngpus1_deeplab
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
@@ -35,8 +37,9 @@ cd ${run_dir}
 
 #some parameters
 lag=0
-train=0
-test=1
+train=1
+test=0
+predict=0
 
 if [ ${train} -eq 1 ]; then
   echo "Starting Training"
@@ -70,17 +73,17 @@ if [ ${train} -eq 1 ]; then
 fi
 
 if [ ${test} -eq 1 ]; then
-  echo "Starting Testing"
+  echo "Starting Evaluation"
   runid=0
   runfiles=$(ls -latr out.lite.fp32.lag${lag}.test.run* | tail -n1 | awk '{print $9}')
   if [ ! -z ${runfiles} ]; then
       runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
   fi
     
-  python -u ./deeplab-tf-inference.py      --datadir_test ${scratchdir}/test \
-                                           --test_size ${numfiles_test} \
+  python -u ./deeplab-tf-inference.py      --datadir_test ${scratchdir}/validation \
+                                           --test_size ${numfiles_validation} \
                                            --downsampling ${downsampling} \
-					   --downsampling_mode "center-crop" \
+					                       --downsampling_mode "center-crop" \
                                            --channels 0 1 2 10 \
                                            --chkpt_dir checkpoint.fp32.lag${lag} \
                                            --output_graph deepcam_inference.pb \
@@ -89,10 +92,39 @@ if [ ${test} -eq 1 ]; then
                                            --loss weighted_mean \
                                            --model=resnet_v2_50 \
                                            --scale_factor 1.0 \
-                                           --batch ${batch} \
+                                           --batch 5 \
                                            --decoder bilinear \
                                            --device "/device:cpu:0" \
                                            --label_id 0 \
-					   --use_batchnorm \
+					                       --use_batchnorm \
+                                           --data_format "channels_last" |& tee out.lite.fp32.lag${lag}.test.run${runid}
+fi
+
+if [ ${predict} -eq 1 ]; then
+  echo "Starting Prediction"
+  runid=0
+  runfiles=$(ls -latr out.lite.fp32.lag${lag}.test.run* | tail -n1 | awk '{print $9}')
+  if [ ! -z ${runfiles} ]; then
+      runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
+  fi
+    
+  python -u ./deeplab-tf-inference.py      --datadir_test ${scratchdir}/test_data \
+                                           --test_size ${numfiles_test} \
+                                           --prediction_mode \
+                                           --downsampling ${downsampling} \
+					                       --downsampling_mode "center-crop" \
+                                           --channels 0 1 2 10 \
+                                           --chkpt_dir checkpoint.fp32.lag${lag} \
+                                           --output_graph deepcam_inference.pb \
+                                           --output output_test \
+                                           --fs local \
+                                           --loss weighted_mean \
+                                           --model=resnet_v2_50 \
+                                           --scale_factor 1.0 \
+                                           --batch 5 \
+                                           --decoder bilinear \
+                                           --device "/device:cpu:0" \
+                                           --label_id 0 \
+					                       --use_batchnorm \
                                            --data_format "channels_last" |& tee out.lite.fp32.lag${lag}.test.run${runid}
 fi
