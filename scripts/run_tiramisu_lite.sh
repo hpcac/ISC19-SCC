@@ -8,7 +8,7 @@ export OMP_PLACES=threads
 export OMP_PROC_BIND=spread
 
 #pick GPU
-#export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=0
 
 #directories and files
 datadir=/mnt/data
@@ -24,9 +24,7 @@ batch=8
 blocks="3 3 4 4 7 7"
 
 #create run dir
-#run_dir=/mnt/runs/tiramisu/run_ngpus1
-run_dir=./run_ngpus1
-#rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
+run_dir=/mnt/runs/tiramisu/run_tiramisu_ngpus1
 mkdir -p ${run_dir}
 
 #copy relevant files
@@ -44,7 +42,7 @@ cd ${run_dir}
 lag=0
 train=0
 test=1
-predict=1
+predict=0
 
 if [ ${train} -eq 1 ]; then
   echo "Starting Training"

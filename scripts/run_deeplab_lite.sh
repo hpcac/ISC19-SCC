@@ -8,7 +8,7 @@ export OMP_PLACES=threads
 export OMP_PROC_BIND=spread
 
 #pick GPU: remove for multi-gpu
-export CUDA_VISIBLE_DEVICES=0
+#export CUDA_VISIBLE_DEVICES=0
 
 #directories
 datadir=/project/projectdirs/mpccc/tkurth/DataScience/gb2018/data/segm_h5_v3_new_split_maeve #/mnt/data
@@ -20,8 +20,8 @@ downsampling=4
 batch=8
 
 #create run dir
-run_dir=/mnt/runs/deeplab/run_ngpus1_deeplab
-#rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
+run_dir=./run_deeplab_ngpus1 #/mnt/runs/deeplab/run_deeplab_ngpus1
+
 mkdir -p ${run_dir}
 
 #copy relevant files
@@ -54,7 +54,7 @@ if [ ${train} -eq 1 ]; then
                                        --datadir_validation ${scratchdir}/validation \
                                        --validation_size ${numfiles_validation} \
                                        --downsampling ${downsampling} \
-				       --downsampling_mode "center-crop" \
+                                       --downsampling_mode "center-crop" \
                                        --channels 0 1 2 10 \
                                        --chkpt_dir checkpoint.fp32.lag${lag} \
                                        --epochs 50 \
@@ -68,7 +68,7 @@ if [ ${train} -eq 1 ]; then
                                        --device "/device:cpu:0" \
                                        --label_id 0 \
                                        --disable_imsave \
-				       --use_batchnorm \
+                                       --use_batchnorm \
                                        --data_format "channels_last" |& tee out.lite.fp32.lag${lag}.train.run${runid}
 fi
 
@@ -83,7 +83,7 @@ if [ ${test} -eq 1 ]; then
   python -u ./deeplab-tf-inference.py      --datadir_test ${scratchdir}/validation \
                                            --test_size ${numfiles_validation} \
                                            --downsampling ${downsampling} \
-					                       --downsampling_mode "center-crop" \
+                                           --downsampling_mode "center-crop" \
                                            --channels 0 1 2 10 \
                                            --chkpt_dir checkpoint.fp32.lag${lag} \
                                            --output_graph deepcam_inference.pb \
@@ -96,7 +96,7 @@ if [ ${test} -eq 1 ]; then
                                            --decoder bilinear \
                                            --device "/device:cpu:0" \
                                            --label_id 0 \
-					                       --use_batchnorm \
+		                           --use_batchnorm \
                                            --data_format "channels_last" |& tee out.lite.fp32.lag${lag}.test.run${runid}
 fi
 

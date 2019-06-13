@@ -43,7 +43,7 @@ image_height_orig = 768
 image_width_orig = 1152
 
 #main function
-def main(device, input_path_test, downsampling_fact, downsampling_mode, channels, data_format, label_id, weights, image_dir, checkpoint_dir, output_graph_file, tst_sz, loss_type, model, decoder, fs_type, batch, batchnorm, dtype, scale_factor):
+def main(device, input_path_test, downsampling_fact, downsampling_mode, channels, data_format, label_id, weights, image_dir, checkpoint_dir, output_graph_file, tst_sz, loss_type, model, decoder, fs_type, batch, batchnorm, dtype, scale_factor, predmode):
     #init horovod
     comm_rank = 0
     comm_local_rank = 0
@@ -95,7 +95,7 @@ def main(device, input_path_test, downsampling_fact, downsampling_mode, channels
 
     with test_graph.as_default():
         #create readers
-        tst_reader = h5_input_reader(input_path_test, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, data_format=data_format, label_id=label_id)
+        tst_reader = h5_input_reader(input_path_test, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, data_format=data_format, label_id=label_id, read_labels=(not predmode))
         #create datasets
         if fs_type == "local":
             tst_dataset = create_dataset(tst_reader, tst_data, batch, 1, comm_local_size, comm_local_rank, dtype, shuffle=False)
@@ -104,25 +104,35 @@ def main(device, input_path_test, downsampling_fact, downsampling_mode, channels
 
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
-        iterator = tf.data.Iterator.from_string_handle(handle, (dtype, tf.int32, dtype, tf.string),
-                                                       ((batch, len(channels), image_height_orig, image_width_orig) if data_format=="channels_first" else (batch, image_height_orig, image_width_orig, len(channels)),
-                                                        (batch, image_height_orig, image_width_orig),
-                                                        (batch, image_height_orig, image_width_orig),
-                                                        (batch))
-                                                       )
+        if not predmode:
+            #in evaluation mode, issue data, label, weight and filename
+            iterator = tf.data.Iterator.from_string_handle(handle, (dtype, tf.int32, dtype, tf.string),
+                                                           ((batch, len(channels), image_height_orig, image_width_orig) if data_format=="channels_first" else (batch, image_height_orig, image_width_orig, len(channels)),
+                                                            (batch, image_height_orig, image_width_orig),
+                                                            (batch, image_height_orig, image_width_orig),
+                                                            (batch)))
+        else:
+            #in prediction mode, just issue data and filename
+            iterator = tf.data.Iterator.from_string_handle(handle, (dtype, tf.string),
+                                                           ((batch, len(channels), image_height_orig, image_width_orig),
+                                                            (batch)))
         next_elem = iterator.get_next()
 
         #if downsampling, do some preprocessing
         if downsampling_fact != 1:
             if downsampling_mode == "scale":
                 rand_select = tf.cast(tf.one_hot(tf.random_uniform((batch, image_height, image_width), minval=0, maxval=downsampling_fact*downsampling_fact, dtype=tf.int32), depth=downsampling_fact*downsampling_fact, axis=-1), dtype=tf.int32)
-                next_elem = (tf.layers.average_pooling2d(next_elem[0], downsampling_fact, downsampling_fact, 'valid', data_format), \
-                            tf.reduce_max(tf.multiply(tf.image.extract_image_patches(tf.expand_dims(next_elem[1], axis=-1), \
-                                                                              [1, downsampling_fact, downsampling_fact, 1], \
-                                                                              [1, downsampling_fact, downsampling_fact, 1], \
-                                                                              [1,1,1,1], 'VALID'), rand_select), axis=-1), \
-                            tf.squeeze(tf.layers.average_pooling2d(tf.expand_dims(next_elem[2], axis=-1), downsampling_fact, downsampling_fact, 'valid', "channels_last"), axis=-1), \
-                            next_elem[3])
+                if not predmode:
+                    next_elem = (tf.layers.average_pooling2d(next_elem[0], downsampling_fact, downsampling_fact, 'valid', data_format), \
+                                tf.reduce_max(tf.multiply(tf.image.extract_image_patches(tf.expand_dims(next_elem[1], axis=-1), \
+                                                                                  [1, downsampling_fact, downsampling_fact, 1], \
+                                                                                  [1, downsampling_fact, downsampling_fact, 1], \
+                                                                                  [1,1,1,1], 'VALID'), rand_select), axis=-1), \
+                                                                                  tf.squeeze(tf.layers.average_pooling2d(tf.expand_dims(next_elem[2], axis=-1), downsampling_fact, downsampling_fact, 'valid', "channels_last"), axis=-1), \
+                                                                                  next_elem[3])
+                else:
+                    next_elem = (tf.layers.average_pooling2d(next_elem[0], downsampling_fact, downsampling_fact, 'valid', data_format), \
+                                 next_elem[1])
         
             elif downsampling_mode == "center-crop":
                 #some parameters
@@ -137,10 +147,13 @@ def main(device, input_path_test, downsampling_fact, downsampling_mode, channels
                     next_elem[0] = tf.transpose(next_elem[0], perm=[0,2,3,1])
                     
                 #crop
-                next_elem = (tf.image.crop_and_resize(next_elem[0], boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="data_cropping"), \
-                             ensure_type(tf.squeeze(tf.image.crop_and_resize(tf.expand_dims(next_elem[1],axis=-1), boxes, box_ind, crop_size, method='nearest', extrapolation_value=0, name="label_cropping"), axis=-1), tf.int32), \
-                             tf.squeeze(tf.image.crop_and_resize(tf.expand_dims(next_elem[2],axis=-1), boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="weight_cropping"), axis=-1), \
-                             next_elem[3])
+                if not predmode:
+                    next_elem = (tf.image.crop_and_resize(next_elem[0], boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="data_cropping"), \
+                                 ensure_type(tf.squeeze(tf.image.crop_and_resize(tf.expand_dims(next_elem[1],axis=-1), boxes, box_ind, crop_size, method='nearest', extrapolation_value=0, name="label_cropping"), axis=-1), tf.int32), \
+                                 tf.squeeze(tf.image.crop_and_resize(tf.expand_dims(next_elem[2],axis=-1), boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="weight_cropping"), axis=-1), \
+                                 next_elem[3])
+                else:
+                    next_elem = (tf.image.crop_and_resize(next_elem[0], boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="data_cropping"), next_elem[1])
                 
                 #be careful with data order
                 if data_format=="channels_first":
@@ -168,50 +181,51 @@ def main(device, input_path_test, downsampling_fact, downsampling_mode, channels
 
         logit, prediction = model(next_elem[0], True, dtype)
 
-        #set up loss
-        loss = None
-
         #cast the logits to fp32
         logit = ensure_type(logit, tf.float32)
-        if loss_type == "weighted":
-            #cast weights to FP32
-            w_cast = ensure_type(next_elem[2], tf.float32)
-            loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],
-                                                          logits=logit,
-                                                          weights=w_cast,
-                                                          reduction=tf.losses.Reduction.SUM)
-            if scale_factor != 1.0:
-                loss *= scale_factor
+        
+        if not predmode:
+            #set up loss
+            loss = None
+            if loss_type == "weighted":
+                #cast weights to FP32
+                w_cast = ensure_type(next_elem[2], tf.float32)
+                loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],
+                                                              logits=logit,
+                                                              weights=w_cast,
+                                                              reduction=tf.losses.Reduction.SUM)
+                if scale_factor != 1.0:
+                    loss *= scale_factor
 
-        elif loss_type == "weighted_mean":
-            #cast weights to FP32
-            w_cast = ensure_type(next_elem[2], tf.float32)
-            loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],
-                                                          logits=logit,
-                                                          weights=w_cast,
-                                                          reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS)
-            if scale_factor != 1.0:
-                loss *= scale_factor
+            elif loss_type == "weighted_mean":
+                #cast weights to FP32
+                w_cast = ensure_type(next_elem[2], tf.float32)
+                loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],
+                                                              logits=logit,
+                                                              weights=w_cast,
+                                                              reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS)
+                if scale_factor != 1.0:
+                    loss *= scale_factor
 
-        elif loss_type == "focal":
-            #one-hot-encode
-            labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
-            #cast to FP32
-            labels_one_hot = ensure_type(labels_one_hot, tf.float32)
-            loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=1., gamma=2.)
+            elif loss_type == "focal":
+                #one-hot-encode
+                labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
+                #cast to FP32
+                labels_one_hot = ensure_type(labels_one_hot, tf.float32)
+                loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=1., gamma=2.)
 
-        else:
-            raise ValueError("Error, loss type {} not supported.",format(loss_type))
+            else:
+                raise ValueError("Error, loss type {} not supported.",format(loss_type))
 
-        #set up streaming metrics
-        iou_op, iou_update_op = tf.metrics.mean_iou(labels=next_elem[1],
-                                                    predictions=tf.argmax(prediction, axis=3),
-                                                    num_classes=3,
-                                                    weights=None,
-                                                    metrics_collections=None,
-                                                    updates_collections=None,
-                                                    name="iou_score")
-        iou_reset_op = tf.variables_initializer([ i for i in tf.local_variables() if i.name.startswith('iou_score/') ])
+            #set up streaming metrics
+            iou_op, iou_update_op = tf.metrics.mean_iou(labels=next_elem[1],
+                                                        predictions=tf.argmax(prediction, axis=3),
+                                                        num_classes=3,
+                                                        weights=None,
+                                                        metrics_collections=None,
+                                                        updates_collections=None,
+                                                        name="iou_score")
+            iou_reset_op = tf.variables_initializer([ i for i in tf.local_variables() if i.name.startswith('iou_score/') ])
 
         #initializers:
         init_op =  tf.global_variables_initializer()
@@ -247,36 +261,48 @@ def main(device, input_path_test, downsampling_fact, downsampling_mode, channels
             print("Starting evaluation on test set")
             while True:
                 try:
-                    #construct feed dict
-                    _, tmp_loss, tst_model_predictions, tst_model_labels, tst_model_filenames = sess.run([iou_update_op,
-                                                                                                          loss,
-                                                                                                          prediction,
-                                                                                                          next_elem[1],
-                                                                                                          next_elem[3]],
-                                                                                                          feed_dict={handle: tst_handle})
+                    if not predmode:
+                        #construct feed dict
+                        _, tmp_loss, tst_model_predictions, tst_model_labels, tst_model_filenames = sess.run([iou_update_op,
+                                                                                                              loss,
+                                                                                                              prediction,
+                                                                                                              next_elem[1],
+                                                                                                              next_elem[3]],
+                                                                                                              feed_dict={handle: tst_handle})
+                    else:
+                        tst_model_predictions, tst_model_filenames = sess.run([prediction, next_elem[1]], feed_dict={handle: tst_handle})
+                        
                     #print some images
                     if have_imsave:
                         imsave(image_dir+'/test_pred_estep'
                                +str(eval_steps)+'_rank'+str(comm_rank)+'.png', np.argmax(tst_model_predictions[0,...],axis=-1)*100)
-                        imsave(image_dir+'/test_label_estep'
-                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png', tst_model_labels[0,...]*100)
-                        imsave(image_dir+'/test_combined_estep'
-                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png', plot_colormap[tst_model_labels[0,...],np.argmax(tst_model_predictions[0,...],axis=-1)])
+                        if not predmode:
+                            imsave(image_dir+'/test_label_estep'
+                                   +str(eval_steps)+'_rank'+str(comm_rank)+'.png', tst_model_labels[0,...]*100)
+                            imsave(image_dir+'/test_combined_estep'
+                                   +str(eval_steps)+'_rank'+str(comm_rank)+'.png', plot_colormap[tst_model_labels[0,...],np.argmax(tst_model_predictions[0,...],axis=-1)])
                     else:
-                        np.savez(image_dir+'/test_estep'
-                                 +str(eval_steps)+'_rank'+str(comm_rank)+'.npz', prediction=np.argmax(tst_model_predictions[...],axis=-1)*100,
-                                                                                                 label=tst_model_labels[...]*100, filename=tst_model_filenames)
+                        if not predmode:
+                            np.savez(image_dir+'/test_estep'
+                                     +str(eval_steps)+'_rank'+str(comm_rank)+'.npz', prediction=np.argmax(tst_model_predictions[...],axis=-1)*100,
+                                                                                     label=tst_model_labels[...]*100, filename=tst_model_filenames)
+                        else:
+                            np.savez(image_dir+'/test_estep'
+                                     +str(eval_steps)+'_rank'+str(comm_rank)+'.npz', prediction=np.argmax(tst_model_predictions[...],axis=-1)*100,
+                                                                                     filename=tst_model_filenames)
 
                     #update loss
-                    eval_loss += tmp_loss
+                    if not predmode:
+                        eval_loss += tmp_loss
                     eval_steps += 1
 
                 except tf.errors.OutOfRangeError:
                     eval_steps = np.max([eval_steps,1])
-                    eval_loss /= eval_steps
-                    print("COMPLETED: evaluation loss is {}".format(eval_loss))
-                    iou_score = sess.run(iou_op)
-                    print("COMPLETED: evaluation IoU is {}".format(iou_score))
+                    if not predmode:
+                        eval_loss /= eval_steps
+                        print("COMPLETED: evaluation loss is {}".format(eval_loss))
+                        iou_score = sess.run(iou_op)
+                        print("COMPLETED: evaluation IoU is {}".format(iou_score))
                     break
 
 if __name__ == '__main__':

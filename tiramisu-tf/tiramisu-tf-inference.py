@@ -271,7 +271,6 @@ def main(input_path_test, downsampling_fact, downsampling_mode, channels, data_f
                                                                                                               feed_dict={handle: tst_handle})
                     else:
                        tst_model_predictions, tst_model_filenames = sess.run([prediction, next_elem[1]], feed_dict={handle: tst_handle})
-                       #tst_model_predictions, tst_model_filenames = sess.run([next_elem[0], next_elem[1]], feed_dict={handle: tst_handle})
                         
                     #print some images
                     if have_imsave:
