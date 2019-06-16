@@ -114,9 +114,11 @@ def main(device, input_path_test, downsampling_fact, downsampling_mode, channels
         else:
             #in prediction mode, just issue data and filename
             iterator = tf.data.Iterator.from_string_handle(handle, (dtype, tf.string),
-                                                           ((batch, len(channels), image_height_orig, image_width_orig),
+                                                           ((batch, len(channels), image_height_orig, image_width_orig) if data_format=="channels_first" else (batch, image_height_orig, image_width_orig, len(channels)),
                                                             (batch)))
         next_elem = iterator.get_next()
+
+        print(next_elem[0].shape, next_elem[1].shape)
 
         #if downsampling, do some preprocessing
         if downsampling_fact != 1:
@@ -167,7 +169,9 @@ def main(device, input_path_test, downsampling_fact, downsampling_mode, channels
         tst_iterator = tst_dataset.make_initializable_iterator()
         tst_handle_string = tst_iterator.string_handle()
         tst_init_op = iterator.make_initializer(tst_dataset)
-
+        
+        print(next_elem[0].shape, next_elem[1])
+        
         #compute the input filter number based on number of channels used
         num_channels = len(channels)
         #set up model
@@ -324,6 +328,7 @@ if __name__ == '__main__':
     AP.add_argument("--use_batchnorm",action="store_true",help="Set flag to enable batchnorm")
     AP.add_argument("--dtype",type=str,default="float32",choices=["float32","float16"],help="Data type for network")
     AP.add_argument("--scale_factor",default=0.1,type=float,help="Factor used to scale loss.")
+    AP.add_argument("--prediction_mode", action='store_true')
     AP.add_argument("--device", default="/device:gpu:0",help="Which device to count the allocated memory on.")
     AP.add_argument("--data_format", default="channels_first",help="Which data format shall be picked [channels_first, channels_last].")
     AP.add_argument("--label_id", type=int, default=None, help="Allows to select a certain label out of a multi-channel labeled data, \
@@ -358,4 +363,5 @@ if __name__ == '__main__':
          batch=parsed.batch,
          batchnorm=parsed.use_batchnorm,
          dtype=dtype,
-         scale_factor=parsed.scale_factor)
+         scale_factor=parsed.scale_factor,
+         predmode=parsed.prediction_mode)

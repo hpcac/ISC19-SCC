@@ -1,7 +1,5 @@
 #!/bin/bash
 
-module load tensorflow/gpu-1.13.1-py36
-
 #openmp stuff
 export OMP_NUM_THREADS=6
 export OMP_PLACES=threads
@@ -11,8 +9,8 @@ export OMP_PROC_BIND=spread
 #export CUDA_VISIBLE_DEVICES=0
 
 #directories
-datadir=/project/projectdirs/mpccc/tkurth/DataScience/gb2018/data/segm_h5_v3_new_split_maeve #/mnt/data
-scratchdir=/project/projectdirs/mpccc/tkurth/DataScience/gb2018/data/segm_h5_v3_new_split_maeve #/mnt/data
+datadir=/mnt/data
+scratchdir=/mnt/data
 numfiles_train=1500
 numfiles_validation=300
 numfiles_test=500
@@ -20,7 +18,7 @@ downsampling=4
 batch=8
 
 #create run dir
-run_dir=./run_deeplab_ngpus1 #/mnt/runs/deeplab/run_deeplab_ngpus1
+run_dir=/mnt/runs/deeplab/run_deeplab_ngpus1
 
 mkdir -p ${run_dir}
 
@@ -38,8 +36,8 @@ cd ${run_dir}
 #some parameters
 lag=0
 train=1
-test=0
-predict=0
+test=1
+predict=1
 
 if [ ${train} -eq 1 ]; then
   echo "Starting Training"

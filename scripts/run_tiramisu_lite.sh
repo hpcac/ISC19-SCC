@@ -40,9 +40,9 @@ cd ${run_dir}
 
 #some parameters
 lag=0
-train=0
+train=1
 test=1
-predict=0
+predict=1
 
 if [ ${train} -eq 1 ]; then
   echo "Starting Training"
